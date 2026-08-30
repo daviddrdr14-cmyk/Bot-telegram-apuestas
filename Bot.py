@@ -1,37 +1,31 @@
 import os
 import threading
 from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import telebot
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+print(f"TOKEN existe? {bool(TOKEN)}")
 
-# Servidor falso para que Render no lo apague
-flask_app = Flask(__name__)
-@flask_app.route('/')
+bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
+
+@app.route('/')
 def home():
-    return "Bot Activo"
+    return "Bot Activo Tuxtla 2026"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    flask_app.run(host="0.0.0.0", port=port)
+@bot.message_handler(commands=['start'])
+def start(m):
+    bot.reply_to(m, "🔥 Bot de Apuestas Activo Tuxtla 2026\n\nYa jala! Escribe un partido:\nReal Madrid vs Barcelona")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔥 Bot de Apuestas Activo\n\nUsa /apuesta para empezar")
+@bot.message_handler(func=lambda x: True)
+def echo(m):
+    bot.reply_to(m, f"Recibi: {m.text}\n✅ Ya estoy funcionando")
 
-async def apuesta(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⚽️ Análisis listo")
+def run_bot():
+    print("Bot iniciado correctamente")
+    bot.infinity_polling()
 
-def main():
-    if not TOKEN:
-        print("ERROR: No hay TELEGRAM_TOKEN")
-        return
-    print("Bot iniciado correctamente...")
-    threading.Thread(target=run_flask).start()
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("apuesta", apuesta))
-    app.run_polling()
+threading.Thread(target=run_bot, daemon=True).start()
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
