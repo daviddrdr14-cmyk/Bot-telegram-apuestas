@@ -1,25 +1,23 @@
 import os
-import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-logging.basicConfig(level=logging.INFO)
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [["⚽ Partidos Hoy"]]
-    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("🔥 Bot de Apuestas Activo ✅\nPresiona ⚽ Partidos Hoy", reply_markup=markup)
+    await update.message.reply_text("🔥 Bot de Apuestas Activo\n\nUsa /apuesta para empezar")
 
-async def partidos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Cargando partidos de hoy... pronto aquí irán las cuotas.")
+async def apuesta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⚽️ Próximamente: análisis de apuestas")
 
 def main():
+    if not TOKEN:
+        print("ERROR: No hay TELEGRAM_TOKEN en Environment")
+        return
     print("Bot iniciado correctamente...")
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Regex("^⚽ Partidos Hoy$"), partidos))
+    app.add_handler(CommandHandler("apuesta", apuesta))
     app.run_polling()
 
 if __name__ == "__main__":
