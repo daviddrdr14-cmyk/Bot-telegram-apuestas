@@ -7,104 +7,94 @@ API_KEY = os.getenv("API_FOOTBALL_KEY")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 HEADERS = {"x-apisports-key": API_KEY}
-CACHE_TEAMS = {}
+
+# IDs FIJOS - no necesitamos buscar
+EQUIPOS_FIJOS = {
+    "monterrey": 1400, "rayados": 1400,
+    "san luis": 1403, "atletico san luis": 1403,
+    "america": 1404, "club america": 1404,
+    "cruz azul": 1406, "tigres": 1405, "chivas": 1399, "guadalajara": 1399,
+    "pumas": 1402, "toluca": 1411,
+    "barcelona": 529, "real madrid": 541, "madrid": 541,
+    "rayo vallecano": 728, "rayo": 728,
+    "atletico madrid": 530, "sevilla": 536, "betis": 543,
+    "manchester city": 50, "man city": 50, "arsenal": 42, "liverpool": 40, "chelsea": 49, "manchester united": 33, "man united": 33,
+    "bayern": 157, "psg": 85, "inter": 505, "milan": 489, "juventus": 496,
+    "boca": 451, "river": 435, "flamengo": 127, "palmeiras": 121
+}
 
 @app.route('/')
-def home():
-    return "Bot GLOBAL V2 Activo"
+def home(): return "Bot V4 IDs FIJOS Activo"
 
-def buscar_equipo(nombre):
-    key = nombre.lower().strip()
-    if key in CACHE_TEAMS: return CACHE_TEAMS[key]
-    try:
-        r = requests.get(f"https://v3.football.api-sports.io/teams?search={nombre}", headers=HEADERS, timeout=15)
-        js = r.json()
-        if js['response']:
-            team = js['response'][0]['team']
-            CACHE_TEAMS[key] = team
-            return team
-    except Exception as e: print("buscar error", e)
-    return None
+def get_id(nombre):
+    n = nombre.lower().strip()
+    if n in EQUIPOS_FIJOS: return EQUIPOS_FIJOS[n], n
+    # busca parcial
+    for k,v in EQUIPOS_FIJOS.items():
+        if k in n or n in k: return v, k
+    return None, None
 
-def get_ultimos_partidos(team_id):
+def get_ultimos(team_id):
     try:
-        # TRAEMOS SIN FILTRO DE TEMPORADA - trae lo más reciente automáticamente
-        url = f"https://v3.football.api-sports.io/fixtures?team={team_id}&last=10&status=FT"
+        url = f"https://v3.football.api-sports.io/fixtures?team={team_id}&last=5"
         r = requests.get(url, headers=HEADERS, timeout=15)
-        data = r.json()
-        # Si la API te dice que excediste límite, avisa
-        if 'errors' in data and data['errors']:
-            print("ERROR API:", data['errors'])
-        return data.get('response', [])
+        js = r.json()
+        if 'errors' in js and js['errors']:
+            return [], str(js['errors'])
+        return js.get('response', []), None
     except Exception as e:
-        print("fixtures error", e)
-        return []
+        return [], str(e)
 
-def analizar_ht(fixtures):
+def analizar(fixtures):
     if not fixtures: return None
-    goles_ht = 0
-    partidos_gol_ht = 0
-    total = 0
-    ligas = []
-    for f in fixtures[:5]: # solo últimos 5 con HT válido
-        ht = f['score']['halftime']
+    g_ht=0; con=0; tot=0; ligas=[]
+    for f in fixtures:
+        ht=f['score']['halftime']
         if not ht or ht['home'] is None: continue
-        g = (ht['home'] or 0) + (ht['away'] or 0)
-        goles_ht += g
-        if g > 0: partidos_gol_ht += 1
-        total += 1
+        g=(ht['home'] or 0)+(ht['away'] or 0)
+        g_ht+=g
+        if g>0: con+=1
+        tot+=1
         ligas.append(f['league']['name'])
-    if total==0: return None
-    prob = int((partidos_gol_ht / total * 100))
-    prom = round(goles_ht/total, 2)
-    liga_comun = max(set(ligas), key=ligas.count) if ligas else "Internacional"
-    return prob, prom, total, liga_comun
-
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.reply_to(m, "🌎 BOT GLOBAL V2 🌎\nPrueba: Real Madrid vs Barcelona")
+    if tot==0: return None
+    return int(con/tot*100), round(g_ht/tot,2), tot, ligas[0] if ligas else "Liga"
 
 @bot.message_handler(func=lambda m: True)
 def predecir(m):
     if "vs" not in m.text.lower(): return
     try:
         e1_name, e2_name = [x.strip() for x in m.text.lower().split("vs")]
+        id1, key1 = get_id(e1_name)
+        id2, key2 = get_id(e2_name)
+        if not id1 or not id2:
+            bot.reply_to(m, f"❌ No tengo ID para {e1_name} o {e2_name}\nPrueba: Barcelona vs Real Madrid, Monterrey vs Tigres, Man City vs Arsenal")
+            return
         bot.send_chat_action(m.chat.id, 'typing')
-        t1 = buscar_equipo(e1_name)
-        t2 = buscar_equipo(e2_name)
-        if not t1 or not t2:
-            bot.reply_to(m, f"❌ No encontré {e1_name} o {e2_name}. Prueba nombres en inglés: Manchester City vs Arsenal")
+        f1, err1 = get_ultimos(id1)
+        f2, err2 = get_ultimos(id2)
+        if err1 or err2:
+            bot.reply_to(m, f"⚠️ Error API: {err1 or err2}\nVerifica tu API_FOOTBALL_KEY en Render")
             return
-        f1 = get_ultimos_partidos(t1['id'])
-        f2 = get_ultimos_partidos(t2['id'])
-
-        # DEBUG para ver qué pasa
-        if not f1 and not f2:
-            bot.reply_to(m, "⚠️ API-Football sin datos o se acabaron los 100 requests gratis de hoy. Se resetea a medianoche. Prueba mañana o verifica tu API KEY en Render.")
+        if not f1 or not f2:
+            bot.reply_to(m, f"Sin partidos para esos IDs. {e1_name}:{len(f1)} {e2_name}:{len(f2)}")
             return
-
-        a1 = analizar_ht(f1)
-        a2 = analizar_ht(f2)
+        a1=analizar(f1); a2=analizar(f2)
         if not a1 or not a2:
-            bot.reply_to(m, f"⚠️ {t1['name']} tiene {len(f1)} partidos pero sin HT. {t2['name']} {len(f2)}. Intenta con equipos TOP de Europa.")
+            bot.reply_to(m, "Sin datos HT válidos")
             return
+        prob=int((a1[0]+a2[0])/2)
+        msg=f"""🌎 **{e1_name.upper()} vs {e2_name.upper()}**
+🏆 {a1[3]}
 
-        prob_real = int((a1[0] + a2[0]) / 2)
-        msg = f"""🌎 **{t1['name']} vs {t2['name']}**
-🏆 {a1[3]} / {a2[3]}
+📡 REAL {a1[2]} partidos:
+{e1_name}: Gol HT {a1[0]}% (prom {a1[1]})
+{e2_name}: Gol HT {a2[0]}% (prom {a2[1]})
 
-📡 REAL (Últimos {a1[2]} partidos):
-{t1['name']}: Gol HT {a1[0]}% (prom {a1[1]})
-{t2['name']}: Gol HT {a2[0]}% (prom {a2[1]})
-
-⏱️ **Over 0.5 Gol HT: {prob_real}%**
-{'✅ SE ESPERA GOL HT' if prob_real>65 else '❌ POCA PROB HT'}
-
-💰 Apuesta: {'Over 0.5 HT' if prob_real>65 else 'Under 0.5 HT'} {prob_real}%
+⏱️ **Over 0.5 Gol HT: {prob}%**
+{'✅ ESPERA GOL HT' if prob>=65 else '❌ POCA PROB'}
 """
         bot.reply_to(m, msg, parse_mode="Markdown")
     except Exception as e:
-        print(e)
         bot.reply_to(m, f"Error: {e}")
 
 def run_bot():
